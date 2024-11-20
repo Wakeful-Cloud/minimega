@@ -1076,6 +1076,11 @@ func (vm *ContainerVM) launch() error {
 		vm.unlinkNetns()
 
 		for _, net := range vm.Networks {
+			// Skip wifi interfaces
+			if net.Wifi {
+				continue
+			}
+
 			br, err := getBridge(net.Bridge)
 			if err != nil {
 				log.Error("get bridge: %v", err)
@@ -1134,8 +1139,16 @@ func (vm *ContainerVM) launchNetwork() error {
 		return fmt.Errorf("symlinkNetns: %v", err)
 	}
 
+	createdTap := false
 	for i := range vm.Networks {
 		nic := &vm.Networks[i]
+
+		// Skip wifi interfaces
+		if nic.Wifi {
+			continue
+		}
+
+		createdTap = true
 
 		// squash driver, not used by containers
 		nic.Driver = ""
@@ -1157,7 +1170,7 @@ func (vm *ContainerVM) launchNetwork() error {
 		}
 	}
 
-	if len(vm.Networks) > 0 {
+	if createdTap {
 		if err := vm.writeTaps(); err != nil {
 			return fmt.Errorf("write taps: %v", err)
 		}

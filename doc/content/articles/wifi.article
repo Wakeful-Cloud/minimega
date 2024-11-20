@@ -1,0 +1,100 @@
+Wifi simulation support with minimega
+
+Colorado School of Mines CSCI 370 FA24 NREL 2 Group
+08 Oct 2024
+
+* Intro
+
+This guide covers the basics of setting up Wifi simulation support with minimega.
+
+Wifi simulation is powered by [[https://github.com/Raizo62/vwifi][vwifi]], which relies on the `mac80211_hwsim` kernel module. As such, *Wifi*simulation*support*is*currently*only*supported*with*Linux*guests*.
+
+** Host set up
+
+*** Installing and building vwifi
+
+To install vwifi, you'll want to download and the vwifi repository.
+First, install some libraries needed to build vwifi:
+
+  # fetch pre-requisites
+  $ sudo apt-get install make g++ libnl-3-dev libnl-genl-3-dev
+
+With those installed, you can pull down the vwifi repo and build:
+
+  # get the repository
+  $ git clone git@github.com:Raizo62/vwifi.git
+
+  # build
+  $ cd vwifi
+  $ make
+  $ make tools
+  $ sudo make install
+
+You should now have the `vwifi-server`, `vwifi-ctrl`, and `vwifi-client` binaries in your path:
+
+  $ which vwifi-server
+  # should print /usr/local/bin/vwifi-server
+  $ which vwifi-ctrl
+  # should print /usr/local/bin/vwifi-ctrl
+  $ which vwifi-client
+  # should print /usr/local/bin/vwifi-client
+
+(You'll also now have a `vwifi-add-interfaces` binary, but we don't technically need it on the host)
+
+*** Minimega VM config
+
+To use vwifi, make sure you start minimega with the `--vwifi` flag. Otherwise, you'll get an error
+when trying to start it. Then, when creating a VM, use one of the below commands:
+
+  # wifi,x coordinate,y coordinate,z coordinate
+  minimega$ vm config net wifi,-3,4,8
+
+Note that all coordinate dimensions are represented as a signed 32 bit integer representing the
+station's distance from the origin in meters.
+
+** Guest set up
+
+Now that the host-side configuration is done, you can download and build the vwifi repository in
+each guest. We recommend doing this once in your image builds to save time. Start by repeating
+the steps from the _Installing_and_building_vwifi_ section above.
+
+Now load the `mac80211_hwsim` kernel module:
+
+  $ sudo modprobe mac80211_hwsim radios=0
+
+Create the virtual interfaces:
+
+  $ vwifi-add-interfaces 1
+
+Note the number needs to match the number of Wifi interfaces you specified in the VM net config.
+Now start the vwifi client (in the background):
+
+  $ vwifi-client &
+
+Now give the vwifi interface(s) IP addresses:
+
+  $ ip address add 10.0.0.1/8 dev wlan0
+
+The vwifi interfaces will be named like `wlanX`, where `X` is a sequentially-increasing number
+starting with `0`. Finally you can do one of the following:
+
+*** AP Mode
+
+To use the guest as an Access Point (AP), use the `hostapd` command. For example:
+
+  # WPA-protected network (SSID: mac80211_wpa, passphrase: 12345678)
+  $ hostapd <vwifi repository root>/tests/hostapd_wpa.conf &
+
+  # Open network (SSID: mac80211_open)
+  $ hostapd <vwifi repository root>/tests/hostapd_open.conf &
+
+*** Client Mode
+
+To use the guest as a client, use the `iw` or `wpa_supplicant` commands. For example:
+
+  # WPA-protected network (SSID: mac80211_wpa, passphrase: 12345678)
+  $ wpa_supplicant -D nl80211 -i wlan0 -c <vwifi repository root>/tests/wpa_supplicant.conf &
+
+  # Open network (SSID: mac80211_open)
+  $ sudo ip link set up wlan0
+  $ sudo iw dev wlan0 connect mac80211_open

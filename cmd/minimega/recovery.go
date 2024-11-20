@@ -67,15 +67,15 @@ func recover() error {
 
 				taps := strings.Split(string(body), "\n")
 
-				// length of taps might be greater than length of network configs if
-				// there's an empty line at the end of the file
-				if len(taps) < len(cfg.Networks) {
-					return fmt.Errorf("mismatch between tap and interface count for vm %s", vm.VMID)
-				}
+				idx := 0
+				for _, c := range cfg.Networks {
+					// Skip wifi interfaces
+					if c.Wifi {
+						continue
+					}
 
-				for i, c := range cfg.Networks {
-					c.Tap = taps[i]
-					cfg.Networks[i] = c
+					c.Tap = taps[idx]
+					cfg.Networks[idx] = c
 
 					br, err := bridges.Get(c.Bridge)
 					if err != nil {
@@ -83,6 +83,14 @@ func recover() error {
 					}
 
 					br.RecoverTap(c.Tap, c.MAC, c.VLAN, false)
+
+					idx++
+				}
+
+				// length of taps might be greater than length of network configs if
+				// there's an empty line at the end of the file
+				if idx != len(cfg.Networks) {
+					return fmt.Errorf("mismatch between tap and interface count for vm %s", vm.VMID)
 				}
 			}
 

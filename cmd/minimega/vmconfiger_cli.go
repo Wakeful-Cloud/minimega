@@ -653,7 +653,7 @@ socket at the path provided
 	{
 		HelpShort: "configures bidirectional-copy-paste",
 		HelpLong: `Enables bidirectional copy paste instead of basic pasting into VM.
-Requries QEMU 6.1+ compiled with spice and for spice-vdagent to be installed on VM.
+Requires QEMU 6.1+ compiled with qemu-vdagent chardev and for spice-vdagent to be installed on VM.
 
 Default: false
 `,

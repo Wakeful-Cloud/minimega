@@ -12,13 +12,35 @@ RUN ./scripts/all.bash
 FROM ubuntu:22.04
 
 RUN apt update && apt install -y \
-  dnsmasq iproute2 isc-dhcp-client \
-  libpcap-dev ntfs-3g openssh-client \
-  openvswitch-switch qemu-kvm qemu-utils \
+  dnsmasq \
+  g++ \
+  git \
+  iproute2 \
+  iptables \
+  isc-dhcp-client \
+  libnl-3-dev \
+  libnl-genl-3-dev \
+  libpcap-dev \
+  make \
+  ntfs-3g \
+  openssh-client \
+  openvswitch-switch \
+  qemu-kvm \
+  qemu-utils \
+  wget \
   && apt autoremove -y \
   && apt clean -y\
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /var/cache/apt/archives/*
+
+RUN git clone https://github.com/Raizo62/vwifi.git -b v6.3 /tmp/vwifi && \
+  cd /tmp/vwifi && \
+  make gitversion && \
+  make update && \
+  make && \
+  make tools && \
+  make install && \
+  rm -rf /tmp/vwifi
 
 COPY --from=gobuilder /minimega/bin/minimega /opt/minimega/bin/minimega
 COPY --from=gobuilder /minimega/bin/miniweb  /opt/minimega/bin/miniweb

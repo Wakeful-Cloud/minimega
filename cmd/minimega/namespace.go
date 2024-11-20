@@ -610,7 +610,7 @@ func (n *Namespace) processVMDisks(vals []string) error {
 	return nil
 }
 
-// processVMNets parses a list of netspecs using processVMNet and updates the
+// parseVMNets parses a list of netspecs using processVMNet and updates the
 // active vmConfig.
 func (n *Namespace) parseVMNets(vals []string) ([]NetConfig, error) {
 	// get valid NIC drivers for current qemu/machine
@@ -633,13 +633,15 @@ func (n *Namespace) parseVMNets(vals []string) ([]NetConfig, error) {
 			return nil, err
 		}
 
-		vlan, err := lookupVLAN(n.Name, nic.Alias)
-		if err != nil {
-			n.vmConfig.Networks = NetConfigs{}
-			return nil, err
+		if !nic.Wifi {
+			vlan, err := lookupVLAN(n.Name, nic.Alias)
+			if err != nil {
+				n.vmConfig.Networks = NetConfigs{}
+				return nil, err
+			}
+			nic.VLAN = vlan
 		}
 
-		nic.VLAN = vlan
 		nic.Raw = spec
 		res = append(res, *nic)
 	}
@@ -677,6 +679,10 @@ func (n *Namespace) processVMNets(vals []string) error {
 	}
 
 	for _, nic := range nics {
+		if nic.Wifi && !*f_enableVwifi {
+			return errors.New("wifi NICs are not enabled (you need to enable vwifi when starting minimega)")
+		}
+
 		n.vmConfig.Networks = append(n.vmConfig.Networks, nic)
 	}
 	return nil

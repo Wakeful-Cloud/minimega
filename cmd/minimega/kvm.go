@@ -252,6 +252,14 @@ type BlockDeviceJobs struct {
 // Ensure that KvmVM implements the VM interface
 var _ VM = (*KvmVM)(nil)
 
+// Vwifi CID counter
+var cid *Counter
+
+func init() {
+	// Initialize the Vwifi CID counter
+	cid = NewCounter(3)
+}
+
 // Copy makes a deep copy and returns reference to the new struct.
 func (old KVMConfig) Copy() KVMConfig {
 	// Copy all fields
@@ -397,6 +405,11 @@ func (vm *KvmVM) Flush() error {
 	defer vm.lock.Unlock()
 
 	for _, net := range vm.Networks {
+		// Skip wifi interfaces
+		if net.Wifi {
+			continue
+		}
+
 		// Handle already disconnected taps differently since they aren't
 		// assigned to any bridges.
 		if net.VLAN == DisconnectedVLAN {
@@ -845,13 +858,40 @@ func (vm *KvmVM) addTap(name, bridge, mac string, vlan int, qinq bool) (string, 
 	return tap, nil
 }
 
+// initializeWifiInterfaces initialized the Wifi interfaces
+func (vm *KvmVM) initializeWifiInterfaces() error {
+	for i := range vm.Networks {
+		nic := &vm.Networks[i]
+
+		// Skip non-wifi interfaces
+		if !nic.Wifi {
+			continue
+		}
+
+		// Assign a unique CID to the wifi interface
+		nic.CID = uint32(cid.Next())
+
+		// Log
+		log.Info("Initializing wifi interface with CID %d at (%d, %d, %d)", nic.CID, nic.WifiStationCoordinates.X, nic.WifiStationCoordinates.Y, nic.WifiStationCoordinates.Z)
+
+		// Move the wifi interface to the specified coordinates
+		err := vwifiController.MoveClient(nic.CID, nic.WifiStationCoordinates.X, nic.WifiStationCoordinates.Y, nic.WifiStationCoordinates.Z)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // createTaps does the work of adding any taps if we are associated with
 // any networks
 func (vm *KvmVM) createTaps() error {
 	for i := range vm.Networks {
 		nic := &vm.Networks[i]
-		if nic.Tap != "" {
-			// tap has already been created, don't need to do again
+		// Skip if tap has already been created or is a wifi interface
+		if nic.Tap != "" || nic.Wifi {
 			continue
 		}
 
@@ -929,6 +969,10 @@ func (vm *KvmVM) launch() error {
 	}
 
 	mustWrite(vm.path("name"), vm.Name)
+
+	if err := vm.initializeWifiInterfaces(); err != nil {
+		return err
+	}
 
 	if err := vm.createTaps(); err != nil {
 		return err
@@ -1083,6 +1127,12 @@ func (vm *KvmVM) Disconnect(cc *ron.Server) error {
 }
 
 func (vm *KvmVM) AddNIC(nic NetConfig) error {
+	// Skip wifi interfaces
+	if nic.Wifi {
+		log.Warn("hotplugging wifi interfaces is not supported")
+		return nil
+	}
+
 	vm.lock.Lock()
 	defer vm.lock.Unlock()
 
@@ -1462,19 +1512,30 @@ func (vm VMConfig) qemuArgs(id int, vmPath string) []string {
 	addBus := func() {
 		addr = 1 // start at 1 because 0 is reserved
 		bus++
-		args = append(args, fmt.Sprintf("-device"))
+		args = append(args, "-device")
 		args = append(args, fmt.Sprintf("pci-bridge,id=pci.%v,chassis_nr=%v", bus, bus))
 	}
 
 	addBus()
+
+	vwifiIndex := 0
+
 	for _, net := range vm.Networks {
-		args = append(args, "-netdev")
-		args = append(args, fmt.Sprintf("tap,id=%v,script=no,ifname=%v", net.Tap, net.Tap))
-		args = append(args, "-device")
-		args = append(args, fmt.Sprintf("driver=%v,netdev=%v,mac=%v,bus=pci.%v,addr=0x%x", net.Driver, net.Tap, net.MAC, bus, addr))
-		addr++
-		if addr == DEV_PER_BUS {
-			addBus()
+		// Wifi interface
+		if net.Wifi {
+			args = append(args, "-device")
+			args = append(args, fmt.Sprintf("vhost-vsock-pci,id=vwifi%d,guest-cid=%d", vwifiIndex, net.CID))
+			vwifiIndex++
+		} else {
+			// Regular interface
+			args = append(args, "-netdev")
+			args = append(args, fmt.Sprintf("tap,id=%v,script=no,ifname=%v", net.Tap, net.Tap))
+			args = append(args, "-device")
+			args = append(args, fmt.Sprintf("driver=%v,netdev=%v,mac=%v,bus=pci.%v,addr=0x%x", net.Driver, net.Tap, net.MAC, bus, addr))
+			addr++
+			if addr == DEV_PER_BUS {
+				addBus()
+			}
 		}
 	}
 

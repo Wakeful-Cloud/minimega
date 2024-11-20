@@ -316,6 +316,10 @@ func (vm *BaseConfig) ReadFieldConfig(r io.Reader, field, namespace string) erro
 
 					cfg := vm.Networks[idx]
 
+					if cfg.Wifi {
+						return fmt.Errorf("cannot bond wifi interfaces")
+					}
+
 					if bond.Bridge == "" {
 						bond.Bridge = cfg.Bridge
 					} else if cfg.Bridge != bond.Bridge {

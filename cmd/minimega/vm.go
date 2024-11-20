@@ -582,6 +582,12 @@ func (vm *BaseVM) UpdateNetworks() {
 
 	for i := range vm.Networks {
 		n := &vm.Networks[i]
+
+		// Skip wifi interfaces
+		if n.Wifi {
+			continue
+		}
+
 		tap, err := bridges.FindTap(n.Tap)
 		if err != nil {
 			// weird...
@@ -604,6 +610,11 @@ func (vm *BaseVM) UpdateQos(tap uint, op bridge.QosOption) error {
 		return fmt.Errorf("invalid tap index specified: %d", tap)
 	}
 
+	// Skip wifi interface
+	if vm.Networks[tap].Wifi {
+		return fmt.Errorf("cannot set QoS on wifi interface")
+	}
+
 	bName := vm.Networks[tap].Bridge
 	tapName := vm.Networks[tap].Tap
 
@@ -619,6 +630,11 @@ func (vm *BaseVM) ClearAllQos() error {
 	defer vm.lock.Unlock()
 
 	for _, nc := range vm.Networks {
+		// Skip wifi interface
+		if nc.Wifi {
+			continue
+		}
+
 		b, err := getBridge(nc.Bridge)
 		if err != nil {
 			log.Error("failed to get bridge %s for vm %s", nc.Bridge, vm.GetName())
@@ -641,6 +657,12 @@ func (vm *BaseVM) ClearQos(tap uint) error {
 		return fmt.Errorf("invalid tap index specified: %d", tap)
 	}
 	nc := vm.Networks[tap]
+
+	// Skip wifi interface
+	if nc.Wifi {
+		return fmt.Errorf("cannot clear QoS on wifi interface")
+	}
+
 	b, err := getBridge(nc.Bridge)
 	if err != nil {
 		return err
@@ -656,6 +678,11 @@ func (vm *BaseVM) GetQos() [][]bridge.QosOption {
 	var res [][]bridge.QosOption
 
 	for _, nc := range vm.Networks {
+		// Skip wifi interface
+		if nc.Wifi {
+			continue
+		}
+
 		b, err := getBridge(nc.Bridge)
 		if err != nil {
 			log.Error("failed to get bridge %s for vm %s", nc.Bridge, vm.GetName())
@@ -698,6 +725,11 @@ func (vm *BaseVM) networkConnect(pos, vlan int, bridge string) error {
 	}
 
 	nic := &vm.Networks[pos]
+
+	// Skip wifi interfaces
+	if nic.Wifi {
+		return fmt.Errorf("cannot connect wifi interfaces")
+	}
 
 	// special case -- if bridge is not specified, reconnect tap to the same
 	// bridge if it is already on a bridge.
@@ -766,6 +798,11 @@ func (vm *BaseVM) networkDisconnect(pos int) error {
 	}
 
 	nic := &vm.Networks[pos]
+
+	// Skip wifi interfaces
+	if nic.Wifi {
+		return fmt.Errorf("cannot disconnect wifi interfaces")
+	}
 
 	// Don't try to diconnect an interface that is already disconnected...
 	if nic.VLAN == DisconnectedVLAN {
@@ -872,6 +909,14 @@ func (vm *BaseVM) Info(field string) (string, error) {
 				vals = append(vals, fmt.Sprintf("%s (%d)", b.Name, b.VLAN))
 			}
 		}
+	case "wifi":
+		for _, v := range vm.Networks {
+			if v.Wifi {
+				vals = append(vals, "true")
+			} else {
+				vals = append(vals, "false")
+			}
+		}
 	case "bond":
 		for _, b := range vm.Bonds {
 			taps := make([]string, len(b.Interfaces))
@@ -922,6 +967,11 @@ func (vm *BaseVM) setErrorf(format string, arg ...interface{}) error {
 func (vm *BaseVM) writeTaps() error {
 	taps := []string{}
 	for _, net := range vm.Networks {
+		// Skip wifi interface
+		if net.Wifi {
+			continue
+		}
+
 		taps = append(taps, net.Tap)
 	}
 

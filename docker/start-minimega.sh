@@ -18,6 +18,8 @@
 : "${MM_FORCE:=true}"
 : "${MM_RECOVER:=false}"
 : "${MM_CGROUP:=/sys/fs/cgroup}"
+: "${MM_VWIFI:=false}"
+: "${MM_VWIFI_PACKET_LOSS:=false}"
 : "${MM_APPEND:=}"
 
 [[ -f "/etc/default/minimega" ]] && source "/etc/default/minimega"
@@ -38,4 +40,6 @@
   -level=${MM_LOGLEVEL} \
   -logfile=${MM_LOGFILE} \
   -cgroup=${MM_CGROUP} \
+  -vwifi=${MM_VWIFI} \
+  -vwifi-packet-loss=${MM_VWIFI_PACKET_LOSS} \
   ${MM_APPEND}

@@ -10,6 +10,7 @@ doc/content/articles/minirouter_api.article
 lib/dist
 lib/MANIFEST
 lib/minimega.py
+lib/*.egg-info
 tests/*.got
 tests/*/*.got
 .DS_Store*

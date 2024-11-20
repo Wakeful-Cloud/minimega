@@ -25,20 +25,35 @@ func init() {
 	}
 }
 
+// WifiStationCoordinates represents the physical coordinates of a wifi station
+type WifiStationCoordinates struct {
+	// X coordinate of the wifi station (in meters; relative to the origin)
+	X int32
+
+	// Y coordinate of the wifi station (in meters; relative to the origin)
+	Y int32
+
+	// Z coordinate of the wifi station (in meters; relative to the origin)
+	Z int32
+}
+
 // NetConfig contains all the network-related config for an interface. The IP
 // addresses are automagically populated by snooping ARP traffic. The bandwidth
 // stats and IP addresses are updated on-demand by calling the UpdateNetworks
 // function of BaseConfig.
 type NetConfig struct {
-	Alias  string
-	VLAN   int
-	Bridge string
-	Tap    string
-	MAC    string
-	Driver string
-	IP4    string
-	IP6    string
-	QinQ   bool
+	Alias                  string
+	VLAN                   int
+	Bridge                 string
+	Tap                    string
+	MAC                    string
+	Driver                 string
+	IP4                    string
+	IP6                    string
+	QinQ                   bool
+	Wifi                   bool
+	WifiStationCoordinates WifiStationCoordinates
+	CID                    uint32
 
 	RxRate, TxRate float64 // Most recent bandwidth measurements for Tap
 
@@ -59,7 +74,6 @@ type NetConfigs []NetConfig
 //	bridge,vlan alias
 //	vlan alias,mac
 //	vlan alias,driver
-//	vlan alias,driver,qinq
 //
 //	bridge,vlan alias,mac
 //	bridge,vlan alias,driver
@@ -72,6 +86,7 @@ type NetConfigs []NetConfig
 //	bridge,vlan alias,mac,qinq
 //	bridge,vlan alias,driver,qinq
 //	vlan alias,mac,driver,qinq
+//	wifi,x coordinate,y coordinate,z coordinate
 //
 //	bridge,vlan alias,mac,driver,qinq
 //
@@ -80,75 +95,114 @@ func ParseNetConfig(spec string, nics map[string]bool) (*NetConfig, error) {
 	// example: my_bridge,100,00:00:00:00:00:00
 	f := strings.Split(spec, ",")
 
-	isDriver := func(d string) bool {
-		return nics[d]
+	isWifi := func(wifi string) bool {
+		return strings.EqualFold(wifi, "wifi")
 	}
 
-	isQinQ := func(q string) bool {
-		return strings.EqualFold(q, "qinq")
+	isCoordinate := func(coordinate string) bool {
+		_, err := strconv.Atoi(coordinate)
+		return err == nil
 	}
 
-	var b, v, m, d string
-	var q bool
+	isDriver := func(driver string) bool {
+		return nics[driver]
+	}
+
+	isQinQ := func(qinq string) bool {
+		return strings.EqualFold(qinq, "qinq")
+	}
+
+	var bridge, vlanAlias, mac, driver string
+	var wifi, qinq bool
+	var wifiStationCoordinates WifiStationCoordinates
 
 	switch len(f) {
 	case 1:
-		v = f[0]
+		// vlan alias
+		vlanAlias = f[0]
 	case 2:
 		if isQinQ(f[1]) {
 			// vlan, qinq
-			v, q = f[0], true
+			vlanAlias, qinq = f[0], true
 		} else if isMAC(f[1]) {
 			// vlan, mac
-			v, m = f[0], f[1]
+			vlanAlias, mac = f[0], f[1]
 		} else if isDriver(f[1]) {
 			// vlan, driver
-			v, d = f[0], f[1]
+			vlanAlias, driver = f[0], f[1]
 		} else {
 			// bridge, vlan
-			b, v = f[0], f[1]
+			bridge, vlanAlias = f[0], f[1]
 		}
 	case 3:
 		if isQinQ(f[2]) && isMAC(f[1]) {
 			// vlan, mac, qinq
-			v, m, q = f[0], f[1], true
+			vlanAlias, mac, qinq = f[0], f[1], true
 		} else if isQinQ(f[2]) && isDriver(f[1]) {
 			// vlan, driver, qinq
-			v, d, q = f[0], f[1], true
+			vlanAlias, driver, qinq = f[0], f[1], true
 		} else if isQinQ(f[2]) {
 			// bridge, vlan, qinq
-			b, v, q = f[0], f[1], true
+			bridge, vlanAlias, qinq = f[0], f[1], true
 		} else if isMAC(f[2]) {
 			// bridge, vlan, mac
-			b, v, m = f[0], f[1], f[2]
+			bridge, vlanAlias, mac = f[0], f[1], f[2]
 		} else if isMAC(f[1]) && isDriver(f[2]) {
 			// vlan, mac, driver
-			v, m, d = f[0], f[1], f[2]
+			vlanAlias, mac, driver = f[0], f[1], f[2]
 		} else if isDriver(f[2]) {
 			// bridge, vlan, driver
-			b, v, d = f[0], f[1], f[2]
+			bridge, vlanAlias, driver = f[0], f[1], f[2]
 		} else {
 			return nil, errors.New("malformed netspec")
 		}
 	case 4:
 		if isQinQ(f[3]) && isMAC(f[1]) {
 			// vlan, mac, driver, qinq
-			v, m, d, q = f[0], f[1], f[2], true
+			vlanAlias, mac, driver, qinq = f[0], f[1], f[2], true
 		} else if isQinQ(f[3]) && isMAC(f[2]) {
 			// bridge, vlan, mac, qinq
-			b, v, m, q = f[0], f[1], f[2], true
+			bridge, vlanAlias, mac, qinq = f[0], f[1], f[2], true
 		} else if isQinQ(f[3]) && isDriver(f[2]) {
 			// bridge, vlan, driver, qinq
-			b, v, d, q = f[0], f[1], f[2], true
+			bridge, vlanAlias, driver, qinq = f[0], f[1], f[2], true
 		} else if isDriver(f[3]) && isMAC(f[2]) {
 			// bridge, vlan, mac, driver
-			b, v, m, d = f[0], f[1], f[2], f[3]
+			bridge, vlanAlias, mac, driver = f[0], f[1], f[2], f[3]
+		} else if isWifi(f[0]) && isCoordinate(f[1]) && isCoordinate(f[2]) && isCoordinate(f[3]) {
+			// wifi,x coordinate,y coordinate,z coordinate
+			wifi = true
+
+			x, err := strconv.ParseInt(f[1], 10, 32)
+
+			if err != nil {
+				return nil, errors.New("unexpectedly failed to parse x coordinate (THIS IS A BUG)")
+			}
+
+			y, err := strconv.ParseInt(f[2], 10, 32)
+
+			if err != nil {
+				return nil, errors.New("unexpectedly failed to parse y coordinate (THIS IS A BUG)")
+			}
+
+			z, err := strconv.ParseInt(f[3], 10, 32)
+
+			if err != nil {
+				return nil, errors.New("unexpectedly failed to parse z coordinate (THIS IS A BUG)")
+			}
+
+			wifiStationCoordinates = WifiStationCoordinates{
+				X: int32(x),
+				Y: int32(y),
+				Z: int32(z),
+			}
 		} else {
 			return nil, errors.New("malformed netspec")
 		}
 	case 5:
 		if isMAC(f[2]) && isDriver(f[3]) && isQinQ(f[4]) {
-			b, v, m, d, q = f[0], f[1], f[2], f[3], true
+			// bridge,vlan alias,mac,driver,qinq
+			bridge, vlanAlias, mac, driver, qinq = f[0], f[1], f[2], f[3], true
 		} else {
 			return nil, errors.New("malformed netspec")
 		}
@@ -156,22 +210,24 @@ func ParseNetConfig(spec string, nics map[string]bool) (*NetConfig, error) {
 		return nil, errors.New("malformed netspec")
 	}
 
-	log.Info(`got bridge="%v", alias="%v", mac="%v", driver="%v"`, b, v, m, d)
-
-	if b == "" {
-		b = DefaultBridge
+	if bridge == "" {
+		bridge = DefaultBridge
 	}
 
-	if d == "" {
-		d = DefaultKVMDriver
+	if driver == "" {
+		driver = DefaultKVMDriver
 	}
+
+	log.Info(`got bridge="%v", alias="%v", mac="%v", driver="%v", qinq="%v", wifi enabled="%v", wifi coordinates="%v"`, bridge, vlanAlias, mac, driver, qinq, wifi, wifiStationCoordinates)
 
 	return &NetConfig{
-		Alias:  v,
-		Bridge: b,
-		MAC:    strings.ToLower(m),
-		Driver: d,
-		QinQ:   q,
+		Alias:                  vlanAlias,
+		Bridge:                 bridge,
+		MAC:                    strings.ToLower(mac),
+		Driver:                 driver,
+		QinQ:                   qinq,
+		Wifi:                   wifi,
+		WifiStationCoordinates: wifiStationCoordinates,
 	}, nil
 }
 
@@ -180,11 +236,17 @@ func ParseNetConfig(spec string, nics map[string]bool) (*NetConfig, error) {
 func (c NetConfig) String() string {
 	parts := []string{}
 
+	if c.Wifi {
+		parts = append(parts, "wifi")
+	}
+
 	if c.Bridge != "" && c.Bridge != DefaultBridge {
 		parts = append(parts, c.Bridge)
 	}
 
-	parts = append(parts, c.Alias)
+	if !c.Wifi {
+		parts = append(parts, c.Alias)
+	}
 
 	if c.MAC != "" {
 		parts = append(parts, c.MAC)
@@ -196,6 +258,15 @@ func (c NetConfig) String() string {
 
 	if c.QinQ {
 		parts = append(parts, "qinq")
+	}
+
+	if c.Wifi {
+		parts = append(
+			parts,
+			fmt.Sprintf("%d", c.WifiStationCoordinates.X),
+			fmt.Sprintf("%d", c.WifiStationCoordinates.Y),
+			fmt.Sprintf("%d", c.WifiStationCoordinates.Z),
+		)
 	}
 
 	return strings.Join(parts, ",")

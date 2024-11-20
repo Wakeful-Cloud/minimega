@@ -12,23 +12,33 @@ type Counter struct {
 // NewCounter creates a channel of IDs and a goroutine to populate the channel
 // with a counter. This is useful for assigning UIDs to fields since the
 // goroutine will (almost) never repeat the same value (unless we hit IntMax).
-func NewCounter() *Counter {
+func NewCounter(options ...int) *Counter {
+	if len(options) > 1 {
+		panic("only one option is allowed (the starting value)")
+	}
+
+	start := 0
+
+	if len(options) == 1 {
+		start = options[0]
+	}
+
 	res := Counter{
 		vals: make(chan int),
 		done: make(chan bool),
 	}
 
-	go func() {
+	go func(start int) {
 		defer close(res.vals)
 
-		for i := 0; ; i++ {
+		for i := start; ; i++ {
 			select {
 			case res.vals <- i:
 			case <-res.done:
 				return
 			}
 		}
-	}()
+	}(start)
 
 	return &res
 }
